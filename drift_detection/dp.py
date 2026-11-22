@@ -67,23 +67,62 @@ def score_sensitivity(
     return alpha * c / (sigma_mean + eps0) + beta * vmax / (sigma_var + eps0)
 
 
-def estimate_clip_c(ref_losses, percentile: float = 99.0) -> float:
+def estimate_clip_c(ref_losses, percentile: float = 99.0, multiplier: float = 1.0) -> float:
     """Clip constant C from reference (validation) per-student losses.
 
     C is a FIXED AUXILIARY PARAMETER derived from held-out validation data; it
     must never be computed from the protected streaming stream. A high
-    percentile keeps almost all signal while bounding sensitivity.
+    percentile keeps almost all NORMAL signal; ``multiplier`` scales it up so
+    that drifted (above-normal) losses are not clipped away — the budget for a
+    larger C is freed by windowed release (see window_sensitivity). C stays a
+    function of validation data only.
 
     Args:
         ref_losses: array-like of per-student losses over validation data
             (any shape; flattened).
-        percentile: percentile of the loss distribution to clip at.
+        percentile: percentile of the (normal) loss distribution.
+        multiplier: factor applied to the percentile (>= 1 preserves more
+            drift signal at the cost of a larger sensitivity).
     """
     arr = np.asarray(ref_losses, dtype=float).ravel()
     if arr.size == 0:
         raise ValueError("ref_losses is empty.")
-    c = float(np.percentile(arr, percentile))
-    return c if c > 0 else float(arr.max() or 1e-6)
+    c = float(np.percentile(arr, percentile)) * float(multiplier)
+    return c if c > 0 else float(arr.max() or 1e-6) * float(multiplier)
+
+
+def window_sensitivity(step_sensitivity: float, w: int) -> float:
+    """Per-clip sensitivity of a tumbling-window mean of W per-step scores.
+
+    One clip falls in exactly one window and shifts that window's mean by at
+    most (step sensitivity)/W, so Delta_win = Delta_step / W. Tumbling (disjoint)
+    windows keep each clip in a single release -> parallel composition, no
+    cross-window budget.
+    """
+    if w < 1:
+        raise ValueError("window size w must be >= 1")
+    return step_sensitivity / w
+
+
+def tumbling_window_means(values, w: int):
+    """Means over consecutive non-overlapping windows of size ``w``.
+
+    Returns (means, end_indices): the mean of each window, and the index of the
+    last sample in each window (used to place a window-level detection back on
+    the sample timeline). A trailing partial window is kept.
+    """
+    arr = np.asarray(values, dtype=float)
+    n = arr.size
+    if w < 1:
+        raise ValueError("window size w must be >= 1")
+    means, ends = [], []
+    for start in range(0, n, w):
+        chunk = arr[start:start + w]
+        if chunk.size == 0:
+            break
+        means.append(float(chunk.mean()))
+        ends.append(min(start + w, n) - 1)
+    return np.array(means), np.array(ends, dtype=int)
 
 
 # ======================================================================

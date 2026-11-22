@@ -26,13 +26,33 @@ class DriftMonitor:
     Feed drift scores one at a time; the monitor logs detected drifts.
     """
 
-    def __init__(self, delta: float = 0.002) -> None:
+    def __init__(
+        self,
+        delta: float = 0.002,
+        clock: int | None = None,
+        grace_period: int | None = None,
+        min_window_length: int | None = None,
+    ) -> None:
         """Initialise the drift monitor.
 
         Args:
             delta: ADWIN sensitivity parameter (smaller → more sensitive).
+            clock: how often (in observations) ADWIN runs its drift check.
+                river's default is 32; left as None it keeps that default so
+                existing pipelines are unchanged. Pass clock=1 to check every
+                observation (removes the check-interval contribution to
+                detection latency — important when comparing window sizes).
+            grace_period, min_window_length: optional ADWIN parameters; None
+                keeps river's defaults.
         """
-        self.adwin = ADWIN(delta=delta)
+        self._adwin_kwargs: dict[str, Any] = {"delta": delta}
+        if clock is not None:
+            self._adwin_kwargs["clock"] = clock
+        if grace_period is not None:
+            self._adwin_kwargs["grace_period"] = grace_period
+        if min_window_length is not None:
+            self._adwin_kwargs["min_window_length"] = min_window_length
+        self.adwin = ADWIN(**self._adwin_kwargs)
         self.drift_events: list[DriftEvent] = []
         self.scores: list[float] = []
         self.mean_losses: list[float] = []
@@ -73,7 +93,7 @@ class DriftMonitor:
 
     def reset(self) -> None:
         """Reset the detector state (e.g. between experiments)."""
-        self.adwin = ADWIN(delta=self.adwin.delta)
+        self.adwin = ADWIN(**self._adwin_kwargs)
         self.drift_events.clear()
         self.scores.clear()
         self.mean_losses.clear()

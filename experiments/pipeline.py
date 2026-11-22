@@ -38,6 +38,10 @@ class SeedComponents:
     # set — a FIXED AUXILIARY parameter source for the DP clip constant C
     # (never derived from streaming data). None if the normaliser was disabled.
     ref_student_losses: object = None
+    # Per-validation-sample mean-loss and variance (for pointwise score
+    # clipping: the validation score range is a fixed auxiliary parameter).
+    ref_mean_losses: object = None
+    ref_variances: object = None
 
 
 def prepare_seed(cfg, features, labels, folds, seed, device) -> SeedComponents:
@@ -99,10 +103,15 @@ def prepare_seed(cfg, features, labels, folds, seed, device) -> SeedComponents:
             mls.append(m); vrs.append(v)
         normalizer = DriftScoreNormalizer(cfg["drift"]["alpha"], cfg["drift"]["beta"]).fit(mls, vrs)
         ref_student_losses = np.asarray(per_student, dtype=float)
+        ref_mean_losses = np.asarray(mls, dtype=float)
+        ref_variances = np.asarray(vrs, dtype=float)
+    else:
+        ref_mean_losses = ref_variances = None
 
     return SeedComponents(
         teacher=teacher, ensemble=ensemble, normalizer=normalizer,
         test_features=test_features, test_labels=test_labels,
         tolerance=cfg.get("eval", {}).get("tolerance", 100), input_dim=input_dim,
         ref_student_losses=ref_student_losses,
+        ref_mean_losses=ref_mean_losses, ref_variances=ref_variances,
     )

@@ -88,6 +88,45 @@ def test_estimate_clip_c_empty_raises():
         dp.estimate_clip_c([])
 
 
+def test_estimate_clip_c_multiplier_scales():
+    losses = np.linspace(0, 100, 101)
+    base = dp.estimate_clip_c(losses, percentile=99.0, multiplier=1.0)
+    scaled = dp.estimate_clip_c(losses, percentile=99.0, multiplier=3.0)
+    assert scaled == pytest.approx(3.0 * base)
+
+
+# ---- windowing (6.5) ----
+def test_window_sensitivity_divides_by_w():
+    assert dp.window_sensitivity(14.0, 50) == pytest.approx(14.0 / 50)
+    assert dp.window_sensitivity(14.0, 1) == pytest.approx(14.0)
+
+
+def test_window_sensitivity_rejects_bad_w():
+    with pytest.raises(ValueError):
+        dp.window_sensitivity(1.0, 0)
+
+
+def test_tumbling_window_means_basic():
+    vals = [1, 1, 1, 1, 2, 2, 2, 2]  # two full windows of 4
+    means, ends = dp.tumbling_window_means(vals, 4)
+    assert list(means) == [1.0, 2.0]
+    assert list(ends) == [3, 7]
+
+
+def test_tumbling_window_means_partial_tail():
+    vals = [0, 0, 0, 6]  # window of 3 then a partial window of 1
+    means, ends = dp.tumbling_window_means(vals, 3)
+    assert list(means) == [0.0, 6.0]
+    assert list(ends) == [2, 3]
+
+
+def test_tumbling_window_w1_is_identity():
+    vals = [0.5, 1.5, 2.5]
+    means, ends = dp.tumbling_window_means(vals, 1)
+    assert list(means) == [0.5, 1.5, 2.5]
+    assert list(ends) == [0, 1, 2]
+
+
 # ---- randomness separation ----
 def test_secure_noise_shape_and_randomness():
     a = dp.draw_gaussian_noise(1.0, size=50, secure=True)
